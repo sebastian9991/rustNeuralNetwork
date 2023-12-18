@@ -1,3 +1,3 @@
-#Neural Network from Scratch!
+# Neural Network from Scratch!
 
-#Implementing an evolutionary algorithm:
+## Implementing an evolutionary algorithm:
