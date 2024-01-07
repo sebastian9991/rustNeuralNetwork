@@ -1,1 +1,1 @@
-workspace = { members = [ "libs/genetic-algorithm","libs/neural-network"] }
+workspace = { members = [ "libs/genetic-algorithm","libs/neural-network", "libs/simulation", "libs/simulation-wasm"] }
