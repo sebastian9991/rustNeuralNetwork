@@ -1,97 +1,134 @@
+pub use self::{animal::*, brain::*, food::*, world::*};
+mod animal;
+mod animal_individual;
+mod brain;
+mod eye;
+mod food;
+mod world;
+use self::animal_individual::*;
+use genetic_algorithm as ga;
+use na::distance;
 use nalgebra as na;
+use neural_network as nn;
 use rand::{Rng, RngCore};
+use std::f32::consts::FRAC_PI_2; //PI / 2.0 for short
+                                 //CONSTANTS:
+                                 //
+                                 //
+const SPEED_MIN: f32 = 0.001;
+const SPEED_MAX: f32 = 0.005;
+const SPEED_ACCEL: f32 = 0.2;
+const ROTATION_ACCEL: f32 = FRAC_PI_2;
+const GENERATION_LENGTH: usize = 2500;
 
 pub struct Simulation {
     world: World,
-}
-
-#[derive(Debug)]
-pub struct World {
-    animals: Vec<Animal>,
-    foods: Vec<Food>,
-}
-
-#[derive(Debug)]
-pub struct Animal {
-    position: na::Point2<f32>,
-    rotation: na::Rotation2<f32>,
-    speed: f32,
-}
-
-#[derive(Debug)]
-pub struct Food {
-    position: na::Point2<f32>,
+    ga: ga::GeneticAlgorithm<ga::RouletteWheelSelection>,
+    age: usize,
 }
 
 impl Simulation {
     pub fn random(rng: &mut dyn RngCore) -> Self {
-        Self {
-            world: World::random(rng),
+        let world = World::random(rng);
+        let ga = ga::GeneticAlgorithm::new(
+            ga::RouletteWheelSelection::new(),
+            ga::UniformCrossover::new(),
+            ga::GaussianMutation::new(0.01, 0.3),
+        );
+        Self { world, ga, age: 0 }
+    }
+
+    pub fn step(&mut self, rng: &mut dyn RngCore) -> Option<ga::Statistics> {
+        self.process_collisions(rng);
+        self.process_brains();
+        self.process_movements();
+
+        self.age += 1;
+
+        if self.age > GENERATION_LENGTH {
+            Some(self.evolve(rng))
+        } else {
+            None
         }
     }
 
-    pub fn step(&mut self) {
+    fn process_movements(&mut self) {
         for animal in &mut self.world.animals {
             animal.position += animal.rotation * na::Vector2::new(0.0, animal.speed);
-
             animal.position.x = na::wrap(animal.position.x, 0.0, 1.0);
             animal.position.y = na::wrap(animal.position.y, 0.0, 1.0);
         }
     }
 
+    fn process_collisions(&mut self, rng: &mut dyn RngCore) {
+        for animal in &mut self.world.animals {
+            for food in &mut self.world.foods {
+                let distance = na::distance(&animal.position, &food.position);
+
+                if distance <= 0.01 {
+                    animal.satiation += 1;
+                    food.position = rng.gen();
+                }
+            }
+        }
+    }
+
+    fn process_brains(&mut self) {
+        for animal in &mut self.world.animals {
+            let vision =
+                animal
+                    .eye
+                    .process_vision(animal.position, animal.rotation, &self.world.foods);
+            let response = animal.brain.nn.propagate(vision);
+
+            let speed = response[0].clamp(-SPEED_ACCEL, SPEED_ACCEL);
+            let rotation = response[1].clamp(-ROTATION_ACCEL, ROTATION_ACCEL);
+
+            animal.speed = (animal.speed + speed).clamp(SPEED_MIN, SPEED_MAX);
+            animal.rotation = na::Rotation2::new(animal.rotation.angle() + rotation);
+        }
+    }
+
+    pub fn train(&mut self, rng: &mut dyn RngCore) -> ga::Statistics {
+        loop {
+            if let Some(summary) = self.step(rng) {
+                return summary;
+            }
+        }
+    }
+
+    fn evolve(&mut self, rng: &mut dyn RngCore) -> ga::Statistics {
+        self.age = 0; //Reset the generation age
+
+        //Step 1: Prepare birdes to be sent into the GeneticAlgorithm
+        let current_population: Vec<_> = self
+            .world
+            .animals
+            .iter()
+            .map(|animal| AnimalIndividual::from_animal(animal))
+            .collect();
+
+        //Step 2: Evolve Birdies
+        let (evolved_population, stats) = self.ga.evolve(rng, &current_population);
+
+        //Step 3: Bring birdies back from the genetic algorithm
+        //
+        self.world.animals = evolved_population
+            .into_iter()
+            .map(|individual| individual.into_animal(rng))
+            .collect();
+
+        //Step 4: Restart the food
+        //
+        //
+        for food in &mut self.world.foods {
+            food.position = rng.gen();
+        }
+
+        stats
+    }
+
     pub fn get_world(&self) -> &World {
         &self.world
-    }
-}
-
-impl World {
-    pub fn random(rng: &mut dyn RngCore) -> Self {
-        let animals = (0..40).map(|_| Animal::random(rng)).collect();
-
-        let foods = (0..60).map(|_| Food::random(rng)).collect();
-
-        Self { animals, foods }
-    }
-
-    pub fn get_animals(&self) -> &[Animal] {
-        &self.animals
-    }
-
-    pub fn get_foods(&self) -> &[Food] {
-        &self.foods
-    }
-}
-
-impl Animal {
-    pub fn random(rng: &mut dyn RngCore) -> Self {
-        Self {
-            position: rng.gen(),
-
-            rotation: rng.gen(),
-
-            speed: 0.002,
-        }
-    }
-
-    //Getters here; notice there is noe deed to get speed as it is constant
-
-    pub fn get_position(&self) -> na::Point2<f32> {
-        self.position
-    }
-
-    pub fn get_rotation(&self) -> na::Rotation2<f32> {
-        self.rotation
-    }
-}
-
-impl Food {
-    pub fn random(rng: &mut dyn RngCore) -> Self {
-        Self {
-            position: rng.gen(),
-        }
-    }
-
-    pub fn get_position(&self) -> na::Point2<f32> {
-        self.position
     }
 }

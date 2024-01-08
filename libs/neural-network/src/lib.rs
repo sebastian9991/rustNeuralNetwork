@@ -1,23 +1,29 @@
-use rand::Rng;
+use core::panic;
 
+use rand::Rng;
+#[derive(Debug)]
 pub struct Network {
     layers: Vec<Layer>,
 }
 
+#[derive(Debug)]
 pub struct LayerTopology {
     pub neurons: usize,
 }
-
+#[derive(Debug)]
 struct Layer {
     neurons: Vec<Neuron>,
 }
-
+#[derive(Debug)]
 struct Neuron {
     bias: f32,
     weights: Vec<f32>,
 }
 
 impl Network {
+    pub fn new(layers: Vec<Layer>) -> Self {
+        Self { layers }
+    }
     pub fn random(layers: &[LayerTopology]) -> Self {
         //Ensure that the layer is more than one layer
         assert!(layers.len() > 1);
@@ -34,14 +40,57 @@ impl Network {
             .iter()
             .fold(inputs, |inputs, layer| layer.propagate(inputs))
     }
+
+    pub fn weights(&self) -> Vec<f32> {
+        //Fun idomatic solution to this function
+        //We just want to collect all the weights through the layers, for each neuron
+        use std::iter::once;
+
+        self.layers
+            .iter()
+            .flat_map(|layer| layer.neurons.iter())
+            .flat_map(|neuron| once(&neuron.bias).chain(&neuron.weights))
+            .copied()
+            .collect()
+    }
+
+    pub fn from_weights(layers: &[LayerTopology], weights: impl IntoIterator<Item = f32>) -> Self {
+        assert!(layers.len() > 1);
+
+        let mut weights = weights.into_iter();
+
+        let layers = layers
+            .windows(2)
+            .map(|layers| Layer::from_weights(layers[0].neurons, layers[1].neurons, &mut weights))
+            .collect();
+
+        if weights.next().is_some() {
+            panic!("got too many weights");
+        }
+
+        Self { layers }
+    }
 }
 
 impl Layer {
+    pub fn new(neurons: Vec<Neuron>) -> Self {
+        Self { neurons }
+    }
     pub fn random(input_size: usize, output_size: usize) -> Self {
         let neurons = (0..output_size)
             .map(|_| Neuron::random(input_size))
             .collect();
 
+        Self { neurons }
+    }
+    pub fn from_weights(
+        input_size: usize,
+        output_size: usize,
+        weights: &mut dyn Iterator<Item = f32>,
+    ) -> Self {
+        let neurons = (0..output_size)
+            .map(|_| Neuron::from_weights(input_size, weights))
+            .collect();
         Self { neurons }
     }
     fn propagate(&self, inputs: Vec<f32>) -> Vec<f32> {
@@ -53,6 +102,9 @@ impl Layer {
 }
 
 impl Neuron {
+    pub fn new(bias: f32, weights: Vec<f32>) -> Self {
+        Self { bias, weights }
+    }
     pub fn random(input_size: usize) -> Self {
         let mut rng = rand::thread_rng();
 
@@ -60,6 +112,15 @@ impl Neuron {
 
         let weights = (0..input_size).map(|_| rng.gen_range(-1.0..=1.0)).collect();
 
+        Self { bias, weights }
+    }
+
+    pub fn from_weights(input_size: usize, weights: &mut dyn Iterator<Item = f32>) -> Self {
+        let bias = weights.next().expect("got not enough weights");
+
+        let weights = (0..input_size)
+            .map(|_| weights.next().expect("got not enough weights"))
+            .collect();
         Self { bias, weights }
     }
 
@@ -179,5 +240,38 @@ mod tests {
         }
         #[test]
         fn test_propagate_network() {}
+    }
+}
+
+mod weights {
+    use super::*;
+
+    #[test]
+    fn test() {
+        let network = Network::new(vec![
+            Layer::new(vec![Neuron::new(0.1, vec![0.2, 0.3, 0.4])]),
+            Layer::new(vec![Neuron::new(0.1, vec![0.6, 0.7, 0.8])]),
+        ]);
+
+        let actual = network.weights();
+        let expected = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+
+        approx::assert_relative_eq!(actual.as_slice(), expected.as_slice());
+    }
+}
+
+mod from_weights {
+    use super::*;
+
+    #[test]
+    fn test() {
+        let layers = &[LayerTopology { neurons: 3 }, LayerTopology { neurons: 2 }];
+
+        let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+
+        let network = Network::from_weights(layers, weights.clone());
+        let actual: Vec<_> = network.weights();
+
+        approx::assert_relative_eq!(actual.as_slice(), weights.as_slice());
     }
 }

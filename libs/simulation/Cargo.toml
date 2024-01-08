@@ -8,3 +8,8 @@ edition = "2021"
 [dependencies]
 nalgebra = {version = "0.32.3", features = ["rand-no-std"]}
 rand = "0.8.5"
+neural-network = {path = "../neural-network"}
+genetic-algorithm = {path = "../genetic-algorithm"}
+
+[dev-dependencies]
+test-case = "3.3.1"
