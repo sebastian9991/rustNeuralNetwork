@@ -7,3 +7,5 @@ Notice the bird's performance, on average, to find and find as much food is not 
 
 ## Near end of the world:
 ![](https://github.com/sebastian9991/rustNeuralNetwork/blob/b2a9de71d63051ea65f11e38580f9eb99bbc5de9/EngAlg.gif)
+
+Each bird in this population has a much greater performance in locating food! Finding the food at a much greater pace and with more direction!
